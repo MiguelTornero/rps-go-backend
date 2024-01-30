@@ -26,6 +26,8 @@ const (
 
 	GAME_TIME_LIMIT_SECONDS = 3600
 	GAME_LIMIT              = 100
+
+	PLAYER_LIMIT = 2
 )
 
 func Clamp(n int, min int, max int) int {
@@ -66,11 +68,12 @@ func NewJSONResponse(w http.ResponseWriter, data any) {
 }
 
 type GameInfo struct {
-	WSUrl        string `json:"websocket_url"`
-	Code         string `json:"code"`
-	RequiredWins int    `json:"required_wins"`
-	TimeLimit    int    `json:"time_limit"`
-	StartTime    int    `json:"start_time"`
+	WSUrl        string       `json:"websocket_url"`
+	Code         string       `json:"code"`
+	RequiredWins int          `json:"required_wins"`
+	TimeLimit    int          `json:"time_limit"`
+	StartTime    int          `json:"start_time"`
+	Players      atomic.Int64 `json:"-"`
 }
 
 type GamesMap struct {
@@ -156,10 +159,15 @@ func (gctx *GlobalContext) ConnectGame(w http.ResponseWriter, r *http.Request) {
 	gameId := r.URL.Query().Get("gameId")
 	log.Println("connecting to game:", gameId)
 
-	_, ok := gctx.Games.Load(gameId)
+	game, ok := gctx.Games.Load(gameId)
 
 	if !ok {
 		NewErrorResponse(w, http.StatusBadRequest, "invalid game id")
+		return
+	}
+
+	if game.Players.Load() >= PLAYER_LIMIT {
+		NewErrorResponse(w, http.StatusBadRequest, "game full")
 		return
 	}
 

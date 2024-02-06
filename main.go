@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -22,6 +23,10 @@ func main() {
 	}
 
 	port = strconv.Itoa(portNum)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.run(ctx)
 
 	fmt.Println("Listening on port:", port)
 	http.ListenAndServe(":"+port, r.router)

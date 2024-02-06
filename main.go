@@ -12,7 +12,7 @@ const (
 )
 
 func main() {
-	r := NewRouter()
+	r := NewRPSServer()
 
 	port := os.Getenv("RPS_APP_PORT")
 	portNum, err := strconv.Atoi(port)
@@ -24,5 +24,5 @@ func main() {
 	port = strconv.Itoa(portNum)
 
 	fmt.Println("Listening on port:", port)
-	http.ListenAndServe(":"+port, r)
+	http.ListenAndServe(":"+port, r.router)
 }

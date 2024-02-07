@@ -29,5 +29,5 @@ func main() {
 	go r.run(ctx)
 
 	fmt.Println("Listening on port:", port)
-	http.ListenAndServe(":"+port, r.router)
+	http.ListenAndServe(":"+port, r)
 }

@@ -7,9 +7,11 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"nhooyr.io/websocket"
 )
 
 const (
@@ -17,6 +19,7 @@ const (
 	CODE_LENGTH_DEFAULT           int    = 5
 	CODE_TRIES_DEFAULT            int    = 10
 	GAME_LIFETIME_SECONDS_DEFAULT int    = 3600
+	GAME_PLAYER_LIMIT_DEFAULT     int    = 2
 )
 
 type RPSServer struct {
@@ -28,23 +31,52 @@ type RPSServer struct {
 }
 
 func NewRPSServer() *RPSServer {
-	router := chi.NewRouter()
+	server := &RPSServer{router: chi.NewRouter(), games: map[string]*Game{}, rng: rand.New(rand.NewSource(time.Now().UnixMicro())), addGame: make(chan *Game), removeGame: make(chan *Game)}
 
-	router.Get("/test", func(w http.ResponseWriter, r *http.Request) {
-		JSONResponse(w, true)
-	})
-
-	router.Get("/connect", func(w http.ResponseWriter, r *http.Request) {
-		JSONResponse(w, true)
-	})
-
-	server := &RPSServer{router: router, games: map[string]*Game{}, rng: rand.New(rand.NewSource(time.Now().UnixMicro())), addGame: make(chan *Game), removeGame: make(chan *Game)}
+	server.router.Get("/test", func(w http.ResponseWriter, r *http.Request) { JSONResponse(w, true) })
+	server.router.Get("/connect", server.HandleConnect)
 
 	test_game := NewGame(server)
 	go test_game.run(context.Background())
+	test_game.Code = "TEST"
 	server.games["TEST"] = test_game
 
 	return server
+}
+
+func (rps *RPSServer) HandleConnect(w http.ResponseWriter, r *http.Request) {
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(GAME_LIFETIME_SECONDS_DEFAULT)*time.Second)
+	defer cancel()
+
+	gameId := r.URL.Query().Get("gameId")
+	gameId = strings.TrimSpace(gameId)
+	gameId = strings.ToUpper(gameId)
+	log.Println("connecting to game:", gameId)
+
+	game, ok := rps.games[gameId]
+	if !ok {
+		conn.Close(websocket.StatusNormalClosure, "invalid connect code")
+		return
+	}
+
+	if game.playerQuantity >= GAME_PLAYER_LIMIT_DEFAULT {
+		conn.Close(websocket.StatusNormalClosure, "game full")
+		return
+	}
+
+	handleWSConnection(ctx, conn, game)
+
+}
+
+func (rps *RPSServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	rps.router.ServeHTTP(w, r)
 }
 
 func (rps *RPSServer) run(ctx context.Context) error {

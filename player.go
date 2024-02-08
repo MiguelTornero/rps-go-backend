@@ -8,14 +8,21 @@ import (
 )
 
 type Player struct {
-	Name    string
-	conn    *websocket.Conn
-	game    *Game
-	msgChan chan []byte
+	Name         string
+	conn         *websocket.Conn
+	game         *Game
+	msgChan      chan []byte
+	shutdownChan chan error
+	number       int
+}
+
+type PlayerMsg struct {
+	player *Player
+	msg    []byte
 }
 
 func handleWSConnection(ctx context.Context, conn *websocket.Conn, game *Game) error {
-	p := &Player{conn: conn, game: game, Name: "Player", msgChan: make(chan []byte)}
+	p := &Player{conn: conn, game: game, Name: "Player", msgChan: make(chan []byte), shutdownChan: make(chan error), number: -1}
 
 	return p.run(ctx)
 }
@@ -31,9 +38,17 @@ func (p *Player) readPump(ctx context.Context) {
 		}
 
 		if msgType == websocket.MessageText {
-			log.Println(string(msg))
+			p.game.playerMsg <- PlayerMsg{player: p, msg: msg}
 		}
 	}
+}
+
+func (p *Player) shutdown(err error, notifyGame bool) {
+	log.Println("shutting down player", p.Name)
+	if notifyGame {
+		p.game.playerLeave <- p
+	}
+	p.conn.Close(websocket.StatusNormalClosure, err.Error())
 }
 
 func (p *Player) run(ctx context.Context) error {
@@ -52,14 +67,17 @@ func (p *Player) run(ctx context.Context) error {
 			if err != nil {
 				log.Println(err)
 				p.game.playerLeave <- p
-				p.conn.CloseNow()
+				if websocket.CloseStatus(err) != -1 {
+					p.conn.Close(websocket.StatusNormalClosure, err.Error())
+				}
 				return err
 			}
-		case <-ctx.Done():
-			err := ctx.Err()
-			p.game.playerLeave <- p
-			p.conn.Close(websocket.StatusNormalClosure, err.Error())
+		case err := <-p.shutdownChan:
+			p.shutdown(err, false)
 			return err
+		case <-ctx.Done():
+			p.shutdown(ctx.Err(), true)
+			return ctx.Err()
 		}
 	}
 }

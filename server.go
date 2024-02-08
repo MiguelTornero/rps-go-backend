@@ -66,7 +66,7 @@ func (rps *RPSServer) HandleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if game.playerQuantity >= GAME_PLAYER_LIMIT_DEFAULT {
+	if game.full {
 		conn.Close(websocket.StatusNormalClosure, "game full")
 		return
 	}

@@ -14,6 +14,7 @@ type Player struct {
 	msgChan      chan []byte
 	shutdownChan chan error
 	number       int
+	move         byte
 }
 
 type PlayerMsg struct {
